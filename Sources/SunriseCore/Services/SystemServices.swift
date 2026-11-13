@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import ServiceManagement
+#endif
 
 public protocol WakeServiceProtocol: Sendable {
     /// Wakes the Mac every selected day at the sunrise start.
@@ -23,6 +25,7 @@ public enum WakeError: LocalizedError, Equatable {
     }
 }
 
+#if os(macOS)
 /// Sets the repeating wake with `pmset`, which needs admin rights; macOS
 /// shows its own password dialog for it.
 public struct PmsetWakeService: WakeServiceProtocol {
@@ -78,3 +81,4 @@ public struct LoginItemService: LoginItemServiceProtocol {
         }
     }
 }
+#endif

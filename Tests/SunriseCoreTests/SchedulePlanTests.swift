@@ -71,6 +71,15 @@ struct SchedulePlanTests {
 
 @Suite("LampCommand")
 struct LampCommandTests {
+    @Test("Sunset scene runs once and turns the light off at the end")
+    func sunsetTurnsOff() {
+        let json = LampCommand.sunset(minutes: 20).json
+        let steps = LampCommand.sunsetFlow(minutes: 20)
+        #expect(json.contains(#""cf",4,2,"#))
+        #expect(steps.map(\.duration).reduce(0, +) == 20 * 60_000)
+        #expect(steps.last?.brightness == 1)
+    }
+
     @Test("Sunrise scene count matches the number of steps")
     func sunriseCount() {
         let json = LampCommand.sunrise(minutes: 30).json
@@ -84,6 +93,7 @@ struct LampCommandTests {
         let steps = LampCommand.sunriseFlow(minutes: 30)
         #expect(steps.first == .init(duration: 50, mode: 1, value: 0xFF1E00, brightness: 1))
         #expect(steps.last?.brightness == 100)
+        #expect(steps.last?.mode == 2 && steps.last?.value == 6500)
         #expect(steps.dropFirst().map(\.duration).reduce(0, +) == 30 * 60_000)
     }
 

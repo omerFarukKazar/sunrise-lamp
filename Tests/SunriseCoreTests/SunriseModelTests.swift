@@ -47,6 +47,20 @@ final class MockStore: SettingsStoreProtocol {
     var lamp: Lamp?
     var lastFired: Date?
     var activity: [ActivityEntry] = []
+    var wakeMedia: WakeMedia?
+}
+
+@MainActor
+final class MockMediaPlayer: MediaPlayerProtocol {
+    private(set) var played: [WakeMedia] = []
+    private(set) var fades: [TimeInterval] = []
+    private(set) var stopped = false
+    func play(_ media: WakeMedia, fadeIn: TimeInterval) -> Bool {
+        played.append(media)
+        fades.append(fadeIn)
+        return true
+    }
+    func stop() { stopped = true }
 }
 
 @MainActor
@@ -56,9 +70,10 @@ struct SunriseModelTests {
     let wake = MockWakeService()
     let login = MockLoginItem()
     let store = MockStore()
+    let media = MockMediaPlayer()
 
     private func makeModel() -> SunriseModel {
-        SunriseModel(lampClient: client, wakeService: wake, loginItem: login, store: store)
+        SunriseModel(lampClient: client, wakeService: wake, loginItem: login, mediaPlayer: media, store: store)
     }
 
     private func enabledSchedule() -> SunriseSchedule {
@@ -141,5 +156,76 @@ struct SunriseModelTests {
             Issue.record("expected .failure, got \(model.status)")
             return
         }
+    }
+
+    @Test("Saving without changing the wake time does not ask for the password")
+    func saveSkipsWakeWhenUnchanged() async {
+        store.schedule = enabledSchedule()
+        let model = makeModel()
+        model.schedule.weekdays = Set(Weekday.allCases)
+        model.toggle(.monday)
+        model.toggle(.monday)
+        #expect(!model.saveNeedsPassword)
+        model.schedule.wakeMinute = 15
+        #expect(model.saveNeedsPassword)
+    }
+
+    @Test("turnOff() powers the lamp off")
+    func turnOff() async {
+        store.lamp = bulb
+        let model = makeModel()
+        await model.turnOff()
+        #expect(client.sent == [.powerOff])
+        guard case .success = model.status else {
+            Issue.record("expected .success, got \(model.status)")
+            return
+        }
+    }
+
+    @Test("Wake media starts with the sunrise and fades in over its duration")
+    func wakeMediaFadesInWithSunrise() async throws {
+        store.schedule = enabledSchedule()
+        store.lamp = bulb
+        let link = try #require(WakeMedia(link: "https://www.youtube.com/watch?v=abc"))
+        let model = makeModel()
+        model.setWakeMedia(link)
+        let start = try #require(SchedulePlan(schedule: store.schedule).startDate(on: .now))
+
+        await model.tick(now: start)
+        #expect(media.played == [link])
+        #expect(media.fades == [30 * 60])
+        #expect(model.isFadingInMedia(at: start.addingTimeInterval(29 * 60)))
+        #expect(!model.isFadingInMedia(at: start.addingTimeInterval(30 * 60)))
+        await model.tick(now: start.addingTimeInterval(60))
+        #expect(media.played.count == 1)
+    }
+
+    @Test("Trying the media plays it at once, without a fade")
+    func previewHasNoFade() throws {
+        let model = makeModel()
+        let link = try #require(WakeMedia(link: "https://youtu.be/abc"))
+        model.setWakeMedia(link)
+        model.previewWakeMedia()
+        #expect(media.fades == [0])
+        #expect(!model.isFadingInMedia())
+    }
+
+    @Test("sunset() sends the fade-out scene")
+    func sunset() async {
+        store.lamp = bulb
+        let model = makeModel()
+        await model.sunset()
+        #expect(client.sent == [.sunset(minutes: SunriseModel.sunsetMinutes)])
+        guard case .success = model.status else {
+            Issue.record("expected .success, got \(model.status)")
+            return
+        }
+    }
+
+    @Test("Only http(s) links are accepted as wake media")
+    func linkValidation() {
+        #expect(WakeMedia(link: "javascript:alert(1)") == nil)
+        #expect(WakeMedia(link: "youtube") == nil)
+        #expect(WakeMedia(link: " https://youtu.be/abc ") != nil)
     }
 }

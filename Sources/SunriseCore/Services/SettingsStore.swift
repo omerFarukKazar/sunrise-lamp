@@ -6,6 +6,7 @@ public protocol SettingsStoreProtocol: AnyObject {
     var lamp: Lamp? { get set }
     var lastFired: Date? { get set }
     var activity: [ActivityEntry] { get set }
+    var wakeMedia: WakeMedia? { get set }
 }
 
 /// Keeps everything in the app's own preferences, no separate files.
@@ -35,6 +36,11 @@ public final class SettingsStore: SettingsStoreProtocol {
     public var activity: [ActivityEntry] {
         get { read("activity") ?? [] }
         set { write(newValue, "activity") }
+    }
+
+    public var wakeMedia: WakeMedia? {
+        get { read("wakeMedia") }
+        set { write(newValue, "wakeMedia") }
     }
 
     private func read<T: Decodable>(_ key: String) -> T? {

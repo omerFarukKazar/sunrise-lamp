@@ -26,30 +26,45 @@ public final class SunriseModel {
     public private(set) var status: Status = .idle
     public private(set) var lampState: LampState
     public private(set) var activity: [ActivityEntry]
+    public private(set) var wakeMedia: WakeMedia?
+    /// When the wake media reaches full volume; the Mac stays awake until then.
+    public private(set) var mediaFadeEndsAt: Date?
 
     @ObservationIgnored private let lampClient: LampClientProtocol
     @ObservationIgnored private let wakeService: WakeServiceProtocol
     @ObservationIgnored private let loginItem: LoginItemServiceProtocol
+    @ObservationIgnored private let mediaPlayer: MediaPlayerProtocol
     @ObservationIgnored private let store: SettingsStoreProtocol
 
     public init(
         lampClient: LampClientProtocol,
         wakeService: WakeServiceProtocol,
         loginItem: LoginItemServiceProtocol,
+        mediaPlayer: MediaPlayerProtocol,
         store: SettingsStoreProtocol
     ) {
         self.lampClient = lampClient
         self.wakeService = wakeService
         self.loginItem = loginItem
+        self.mediaPlayer = mediaPlayer
         self.store = store
         schedule = store.schedule
         savedSchedule = store.schedule
         lampState = store.lamp.map(LampState.found) ?? .unknown
         activity = store.activity
+        wakeMedia = store.wakeMedia
     }
 
     public var plan: SchedulePlan { SchedulePlan(schedule: schedule) }
     public var hasChanges: Bool { schedule != savedSchedule }
+
+    /// Saving asks for the admin password only when the Mac's wake time changes.
+    public var saveNeedsPassword: Bool { wakeChanged }
+
+    /// True while the wake media is still fading in, so the Mac must not sleep.
+    public func isFadingInMedia(at now: Date = .now) -> Bool {
+        mediaFadeEndsAt.map { now < $0 } ?? false
+    }
 
     public var isWorking: Bool {
         if case .working = status { return true }
@@ -87,15 +102,17 @@ public final class SunriseModel {
             return
         }
         status = .working("Kaydediliyor…")
-        do {
-            if schedule.isEnabled {
-                try await wakeService.schedule(plan)
-            } else {
-                try await wakeService.cancel()
+        if wakeChanged {
+            do {
+                if schedule.isEnabled {
+                    try await wakeService.schedule(plan)
+                } else {
+                    try await wakeService.cancel()
+                }
+            } catch {
+                status = .failure(error.localizedDescription)
+                return
             }
-        } catch {
-            status = .failure(error.localizedDescription)
-            return
         }
 
         savedSchedule = schedule
@@ -125,24 +142,73 @@ public final class SunriseModel {
         }
     }
 
-    public func turnOff() async {
-        status = .working("Lamba kapatılıyor…")
-        if await send(.powerOff, kind: .info, message: "Lamba kapatıldı") {
-            status = .idle
+    public func turnOn() async {
+        status = .working("Işık açılıyor…")
+        if await send(.powerOn, kind: .info, message: "Işık açıldı") {
+            status = .success("Işık açıldı.")
         }
     }
 
-    /// Called periodically and on wake; starts the sunrise once per scheduled day.
+    /// How long the sunset button takes to fade the light out.
+    public nonisolated static let sunsetMinutes = 30
+
+    public func sunset(minutes: Int = sunsetMinutes) async {
+        status = .working("Gün batımı başlıyor…")
+        if await send(.sunset(minutes: minutes), kind: .info, message: "Gün batımı başladı (\(minutes) dk)") {
+            status = .success("Işık \(minutes) dakikada kızıla dönüp sönecek.")
+        }
+    }
+
+    public func turnOff() async {
+        status = .working("Işık kapatılıyor…")
+        if await send(.powerOff, kind: .info, message: "Işık kapatıldı") {
+            status = .success("Işık kapatıldı. Alarm saatinde yine yanacak.")
+        }
+    }
+
+    public func setWakeMedia(_ media: WakeMedia?) {
+        wakeMedia = media
+        store.wakeMedia = media
+    }
+
+    public func previewWakeMedia() {
+        guard let wakeMedia else { return }
+        status = mediaPlayer.play(wakeMedia, fadeIn: 0) ? .idle : .failure("\(wakeMedia.title) açılamadı.")
+    }
+
+    public func stopWakeMedia() {
+        mediaPlayer.stop()
+        mediaFadeEndsAt = nil
+    }
+
+    /// Called periodically and on wake; starts the sunrise once per scheduled
+    /// day, with the wake media fading in alongside the light.
     public func tick(now: Date = .now) async {
         guard savedSchedule.isEnabled else { return }
         let savedPlan = SchedulePlan(schedule: savedSchedule)
         guard savedPlan.shouldFire(at: now, lastFired: store.lastFired) else { return }
         store.lastFired = now
+        let fade = TimeInterval(savedPlan.durationMinutes * 60)
         _ = await send(
             .sunrise(minutes: savedPlan.durationMinutes),
             kind: .sunrise,
             message: "Güneş doğuşu başladı (\(savedPlan.durationMinutes) dk)"
         )
+        guard let wakeMedia else { return }
+        if mediaPlayer.play(wakeMedia, fadeIn: fade) {
+            mediaFadeEndsAt = now.addingTimeInterval(fade)
+            record(.sunrise, "Müzik başladı: \(wakeMedia.title)")
+        } else {
+            record(.failure, "\(wakeMedia.title) açılamadı")
+        }
+    }
+
+    /// Whether saving changes what `pmset` wakes the Mac for.
+    private var wakeChanged: Bool {
+        guard schedule.isEnabled == savedSchedule.isEnabled else { return true }
+        guard schedule.isEnabled else { return false }
+        let saved = SchedulePlan(schedule: savedSchedule)
+        return plan.pmsetDays != saved.pmsetDays || plan.pmsetTime != saved.pmsetTime
     }
 
     /// Sends to the known lamp, searching the network again if that fails.

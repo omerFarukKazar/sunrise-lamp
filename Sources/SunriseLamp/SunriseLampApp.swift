@@ -12,6 +12,7 @@ struct SunriseLampApp: App {
             lampClient: YeelightClient(),
             wakeService: PmsetWakeService(),
             loginItem: LoginItemService(),
+            mediaPlayer: MediaPlayer(),
             store: SettingsStore()
         )
         let monitor = AlarmMonitor(model: model)
@@ -39,6 +40,7 @@ final class AlarmMonitor {
     private var loop: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
     private var activity: NSObjectProtocol?
+    private var mediaActivity: NSObjectProtocol?
 
     init(model: SunriseModel) {
         self.model = model
@@ -68,5 +70,20 @@ final class AlarmMonitor {
         let busy = ProcessInfo.processInfo.beginActivity(options: .idleSystemSleepDisabled, reason: "Lambaya komut gönderiliyor")
         defer { ProcessInfo.processInfo.endActivity(busy) }
         await model.tick()
+        holdAwakeForMedia(model.isFadingInMedia())
+    }
+
+    /// Keeps the Mac from idling back to sleep while the wake media fades in,
+    /// so the volume keeps rising.
+    private func holdAwakeForMedia(_ needed: Bool) {
+        switch (needed, mediaActivity) {
+        case (true, nil):
+            mediaActivity = ProcessInfo.processInfo.beginActivity(options: .idleSystemSleepDisabled, reason: "Uyandırma müziğinin sesi açılıyor")
+        case (false, let activity?):
+            ProcessInfo.processInfo.endActivity(activity)
+            mediaActivity = nil
+        default:
+            break
+        }
     }
 }

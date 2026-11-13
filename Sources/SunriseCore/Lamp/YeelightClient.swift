@@ -100,7 +100,7 @@ public struct YeelightClient: LampClientProtocol {
         return nil
     }
 
-    /// The first three octets of the Mac's Wi-Fi/Ethernet IPv4 address, e.g. "192.168.1".
+    /// The first three octets of the device's Wi-Fi/Ethernet IPv4 address, e.g. "192.168.1".
     private static func localSubnetPrefix() -> String? {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0 else { return nil }

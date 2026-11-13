@@ -10,6 +10,7 @@ struct SunriseView: View {
             HeroCard(model: model)
             ScheduleCard(model: model)
             LampCard(model: model)
+            WakeMediaCard(model: model)
             StatusBanner(status: model.status)
             if model.hasChanges {
                 SaveSection(model: model)
@@ -179,8 +180,9 @@ private struct LampCard: View {
     let model: SunriseModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             row
+            actions
             if case .notFound = model.lampState {
                 Text("Lamba açık ve aynı Wi-Fi'da olmalı. İzin sorulmadıysa: Sistem Ayarları › Gizlilik ve Güvenlik › Yerel Ağ › Sunrise Lamp.")
                     .font(Typography.caption)
@@ -228,14 +230,49 @@ private struct LampCard: View {
                 .accessibilityLabel("Lambayı yeniden ara")
                 .help("Lambayı yeniden ara")
             }
-
-            Button("Test") {
-                Task { await model.runTest() }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(model.isWorking)
-            .help("1 dakikalık güneş doğuşu dene")
         }
+    }
+
+    private var actions: some View {
+        VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                lightButtons
+            }
+            Button {
+                Task { await model.sunset() }
+            } label: {
+                Label("Gün batımı · \(SunriseModel.sunsetMinutes) dk", systemImage: "sunset")
+                    .frame(maxWidth: .infinity)
+            }
+            .help("Işık yavaşça turuncuya, sonra kızıla döner ve söner")
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(model.isWorking || model.lampState == .searching)
+    }
+
+    @ViewBuilder private var lightButtons: some View {
+        Button {
+            Task { await model.turnOff() }
+        } label: {
+            Label("Kapat", systemImage: "lightbulb.slash")
+                .frame(maxWidth: .infinity)
+        }
+        .help("Işığı kapat, alarm saatinde yine yanar")
+
+        Button {
+            Task { await model.turnOn() }
+        } label: {
+            Label("Aç", systemImage: "lightbulb")
+                .frame(maxWidth: .infinity)
+        }
+
+        Button {
+            Task { await model.runTest() }
+        } label: {
+            Label("Test", systemImage: "sunrise")
+                .frame(maxWidth: .infinity)
+        }
+        .help("1 dakikalık güneş doğuşu dene")
     }
 
     private var statusText: String {
@@ -252,6 +289,106 @@ private struct LampCard: View {
         case .found: Palette.success
         case .notFound: Palette.danger
         case .unknown, .searching: Palette.textSecondary
+        }
+    }
+}
+
+// MARK: - Wake media
+
+private struct WakeMediaCard: View {
+    let model: SunriseModel
+    @State private var linkText = ""
+    @State private var linkError = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Doğuşla birlikte çal")
+                .font(Typography.label)
+                .foregroundStyle(Palette.textPrimary)
+            Text("Kızıl ışıkla sessiz başlar, gün ışığına kadar sesi yavaşça açılır.")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let media = model.wakeMedia {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: icon(for: media))
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityHidden(true)
+                    Text(media.title)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(media.title)
+                    Spacer()
+                    Button {
+                        model.previewWakeMedia()
+                    } label: {
+                        Image(systemName: "play.fill")
+                    }
+                    .accessibilityLabel("Dene")
+                    .help("Şimdi çal")
+                    Button {
+                        model.stopWakeMedia()
+                        model.setWakeMedia(nil)
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Kaldır")
+                    .help("Kaldır")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            } else {
+                HStack(spacing: Spacing.sm) {
+                    TextField("YouTube linki yapıştır", text: $linkText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(saveLink)
+                    Button("Ekle", action: saveLink)
+                        .disabled(linkText.isEmpty)
+                    Button {
+                        chooseFile()
+                    } label: {
+                        Image(systemName: "music.note")
+                    }
+                    .accessibilityLabel("Ses dosyası seç")
+                    .help("Ses dosyası seç")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                if linkError {
+                    Label("Geçerli bir http(s) linki değil.", systemImage: "exclamationmark.circle")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.danger)
+                }
+            }
+        }
+        .card()
+    }
+
+    private func saveLink() {
+        guard let media = WakeMedia(link: linkText) else {
+            linkError = true
+            return
+        }
+        linkError = false
+        linkText = ""
+        model.setWakeMedia(media)
+    }
+
+    private func chooseFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.message = "Doğuşla birlikte çalacak ses dosyasını seç"
+        NSApp.activate()
+        if panel.runModal() == .OK, let url = panel.url {
+            model.setWakeMedia(.file(url))
+        }
+    }
+
+    private func icon(for media: WakeMedia) -> String {
+        switch media {
+        case .link: "play.rectangle"
+        case .file: "music.note"
         }
     }
 }
@@ -305,7 +442,7 @@ private struct SaveSection: View {
             .keyboardShortcut(.defaultAction)
             .disabled(model.isWorking || (model.schedule.isEnabled && model.schedule.weekdays.isEmpty))
 
-            Text("Mac'i uyandırmak için macOS yönetici şifreni soracak.")
+            Text(model.saveNeedsPassword ? "Mac'in uyanma saati değiştiği için macOS yönetici şifreni soracak." : "Şifre gerekmez.")
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .multilineTextAlignment(.center)
