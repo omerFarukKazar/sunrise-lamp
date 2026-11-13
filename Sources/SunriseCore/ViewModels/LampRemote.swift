@@ -1,9 +1,8 @@
 import Foundation
 import Observation
 
-/// Drives the lamp directly, without the Mac's wake schedule: the iPhone app
-/// and its Shortcuts actions use this. The bulb runs each colour flow itself,
-/// so one command is enough.
+/// Drives the lamp for the iPhone app and its Shortcuts actions. The bulb runs
+/// each colour flow itself, so one command is enough.
 @MainActor
 @Observable
 public final class LampRemote {
@@ -29,38 +28,46 @@ public final class LampRemote {
         case off
     }
 
-    /// How long the sunset fades the light out.
-    public nonisolated static let sunsetMinutes = 30
-
-    /// Wake time and sunrise length; the automation time follows from them.
+    /// Sunrise length, end light and sunset length.
     public var schedule: SunriseSchedule {
         didSet { store.schedule = schedule }
     }
 
     /// The manual light controls. Every change reaches the lamp shortly after
-    /// the last edit, so dragging a slider does not flood the bulb.
+    /// the last edit, so dragging a control does not flood the bulb.
     public var light: LightSetting {
         didSet {
             guard light != oldValue else { return }
             store.light = light
-            scheduleLightUpdate()
+            isOn = true
+            scheduleSend { $0.light.command }
         }
     }
 
+    /// The sunrise length the Shortcuts automation was last set up for.
+    public private(set) var automationMinutes: Int? {
+        didSet { store.automationMinutes = automationMinutes }
+    }
+
+    /// The last power state this app asked for. The bulb is never asked, so a
+    /// change from the Yeelight app or the wall switch is not seen.
+    public private(set) var isOn = true
     public private(set) var status: Status = .idle
     public private(set) var lampState: LampState
 
     @ObservationIgnored private let client: LampClientProtocol
     @ObservationIgnored private let store: SettingsStoreProtocol
-    @ObservationIgnored private var lightUpdate: Task<Void, Never>?
-    @ObservationIgnored private let lightDelay: Duration
+    @ObservationIgnored private var pendingSend: Task<Void, Never>?
+    @ObservationIgnored private let sendDelay: Duration
+    @ObservationIgnored private var isPreviewing = false
 
     public init(client: LampClientProtocol, store: SettingsStoreProtocol, lightDelay: Duration = .milliseconds(250)) {
         self.client = client
         self.store = store
-        self.lightDelay = lightDelay
+        self.sendDelay = lightDelay
         schedule = store.schedule
         light = store.light
+        automationMinutes = store.automationMinutes
         lampState = store.lamp.map(LampState.found) ?? .unknown
     }
 
@@ -74,26 +81,25 @@ public final class LampRemote {
         return false
     }
 
-    /// When the Shortcuts automation should run: the wake time minus the sunrise.
-    public var automationTime: String { SchedulePlan(schedule: schedule).start.timeText }
+    // MARK: - Automation
 
-    /// The wake-up time as a `Date` for `DatePicker`; only hour and minute matter.
-    public var wakeTime: Date {
-        get {
-            Calendar.current.date(from: DateComponents(hour: schedule.wakeHour, minute: schedule.wakeMinute)) ?? .now
-        }
-        set {
-            let components = Calendar.current.dateComponents([.hour, .minute], from: newValue)
-            schedule.wakeHour = components.hour ?? schedule.wakeHour
-            schedule.wakeMinute = components.minute ?? schedule.wakeMinute
-        }
+    /// What the user still has to do in Shortcuts, or nil when nothing.
+    public var automationReminder: AutomationReminder? {
+        AutomationReminder(confirmedMinutes: automationMinutes, currentMinutes: schedule.durationMinutes)
     }
+
+    /// The user says the automation matches the current sunrise length.
+    public func confirmAutomation() {
+        automationMinutes = schedule.durationMinutes
+    }
+
+    // MARK: - Actions
 
     public func command(for action: Action) -> LampCommand {
         switch action {
         case .sunrise: .sunrise(minutes: schedule.durationMinutes, endKelvin: schedule.endKelvin)
         case .test: .sunrise(minutes: 1, endKelvin: schedule.endKelvin)
-        case .sunset: .sunset(minutes: LampRemote.sunsetMinutes)
+        case .sunset: .sunset(minutes: schedule.sunsetMinutes)
         case .on: .powerOn
         case .off: .powerOff
         }
@@ -101,9 +107,9 @@ public final class LampRemote {
 
     public func message(for action: Action) -> String {
         switch action {
-        case .sunrise: "Güneş doğuyor, \(schedule.durationMinutes) dakikada gün ışığına ulaşacak."
+        case .sunrise: "Güneş doğuyor, \(schedule.durationMinutes) dakikada \(schedule.endLight.phrase) ulaşacak."
         case .test: "1 dakikalık test gönderildi, lambaya bak."
-        case .sunset: "Işık \(LampRemote.sunsetMinutes) dakikada kızıla dönüp sönecek."
+        case .sunset: "Işık \(schedule.sunsetMinutes) dakikada kızıla dönüp sönecek."
         case .on: "Işık açıldı."
         case .off: "Işık kapatıldı."
         }
@@ -122,31 +128,71 @@ public final class LampRemote {
     /// Sends the action, searching the network again if the known address fails.
     @discardableResult
     public func perform(_ action: Action) async -> Bool {
+        pendingSend?.cancel()
         status = .working("Lambaya gönderiliyor…")
         if let failure = await deliver(command(for: action)) {
             status = .failure(failure)
             return false
         }
+        isOn = action != .off
+        // A sunrise that arrives with no automation on record came from one the
+        // user already set up, so the setup reminder can go.
+        if action == .sunrise, automationMinutes == nil {
+            automationMinutes = schedule.durationMinutes
+        }
         status = .success(message(for: action))
         return true
+    }
+
+    /// Turns the lamp off, or back on with the manual light setting.
+    public func setPower(_ on: Bool) async {
+        isOn = on
+        if on {
+            await applyLight()
+        } else {
+            await perform(.off)
+        }
     }
 
     /// Sends the current manual light setting. Success stays quiet; only a
     /// failure shows up in the status.
     public func applyLight() async {
-        if let failure = await deliver(light.command) {
-            status = .failure(failure)
-        } else if case .failure = status {
-            status = .idle
+        await sendQuietly(light.command)
+        isOn = true
+    }
+
+    // MARK: - Sunrise preview
+
+    /// Shows a sunrise end light on the lamp while the user picks it.
+    public func preview(endKelvin: Int) {
+        isPreviewing = true
+        scheduleSend { _ in .temperature(kelvin: endKelvin, brightness: 100) }
+    }
+
+    /// Puts the lamp back the way it was before the preview.
+    public func endPreview() async {
+        guard isPreviewing else { return }
+        isPreviewing = false
+        pendingSend?.cancel()
+        await sendQuietly(isOn ? light.command : .powerOff)
+    }
+
+    // MARK: - Sending
+
+    private func scheduleSend(_ command: @escaping @MainActor (LampRemote) -> LampCommand) {
+        pendingSend?.cancel()
+        pendingSend = Task { [sendDelay] in
+            try? await Task.sleep(for: sendDelay)
+            guard !Task.isCancelled else { return }
+            await sendQuietly(command(self))
         }
     }
 
-    private func scheduleLightUpdate() {
-        lightUpdate?.cancel()
-        lightUpdate = Task { [lightDelay] in
-            try? await Task.sleep(for: lightDelay)
-            guard !Task.isCancelled else { return }
-            await applyLight()
+    private func sendQuietly(_ command: LampCommand) async {
+        if let failure = await deliver(command) {
+            status = .failure(failure)
+        } else if case .failure = status {
+            status = .idle
         }
     }
 

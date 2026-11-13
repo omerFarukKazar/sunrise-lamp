@@ -57,12 +57,13 @@ public struct LightPreset: Identifiable, Equatable, Sendable {
     public var id: String { name }
 
     public static let all: [LightPreset] = [
-        LightPreset(name: "Mum", symbol: "flame", setting: .init(mode: .white, kelvin: 1700, rgb: 0xFF8C00, brightness: 20)),
-        LightPreset(name: "Akşam", symbol: "moon.stars", setting: .init(mode: .white, kelvin: 2700, rgb: 0xFF8C00, brightness: 45)),
+        LightPreset(name: "Mum", symbol: "flame", setting: .init(mode: .white, kelvin: 1900, rgb: 0xFF8C00, brightness: 20)),
         LightPreset(name: "Okuma", symbol: "book", setting: .init(mode: .white, kelvin: 4000, rgb: 0xFF8C00, brightness: 85)),
         LightPreset(name: "Gün ışığı", symbol: "sun.max", setting: .init(mode: .white, kelvin: 5000, rgb: 0xFF8C00, brightness: 100)),
-        LightPreset(name: "Şafak", symbol: "sunrise", setting: .init(mode: .color, kelvin: 4000, rgb: 0xFF4500, brightness: 30)),
     ]
+
+    /// The white tones offered as one-tap circles on the light screen.
+    public static let tones = [1900, 2700, 3500, 4000, 5000, 6500]
 }
 
 extension ClosedRange where Bound == Int {

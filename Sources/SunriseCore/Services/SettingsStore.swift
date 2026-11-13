@@ -5,6 +5,9 @@ public protocol SettingsStoreProtocol: AnyObject {
     var schedule: SunriseSchedule { get set }
     var lamp: Lamp? { get set }
     var light: LightSetting { get set }
+    /// The sunrise length the Shortcuts automation was last set up for, or nil
+    /// before the user has set one up.
+    var automationMinutes: Int? { get set }
 }
 
 /// Keeps everything in the app's own preferences, no separate files.
@@ -29,6 +32,11 @@ public final class SettingsStore: SettingsStoreProtocol {
     public var light: LightSetting {
         get { read("light") ?? .default }
         set { write(newValue, "light") }
+    }
+
+    public var automationMinutes: Int? {
+        get { read("automationMinutes") }
+        set { write(newValue, "automationMinutes") }
     }
 
     private func read<T: Decodable>(_ key: String) -> T? {

@@ -24,4 +24,5 @@ final class MockStore: SettingsStoreProtocol {
     var schedule: SunriseSchedule = .default
     var lamp: Lamp?
     var light: LightSetting = .default
+    var automationMinutes: Int?
 }

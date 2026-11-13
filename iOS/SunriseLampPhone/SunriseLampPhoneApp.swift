@@ -7,7 +7,7 @@ struct SunriseLampPhoneApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(remote: remote)
+            RootView(remote: remote)
         }
     }
 }

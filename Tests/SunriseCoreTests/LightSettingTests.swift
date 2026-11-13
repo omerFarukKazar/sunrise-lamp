@@ -30,11 +30,15 @@ struct LightSettingTests {
         #expect(cool & 0xFF > 240)
     }
 
-    @Test("A schedule saved before endKelvin existed still loads")
+    @Test("A schedule saved with a wake time still loads, keeping its length")
     func oldScheduleDecodes() throws {
-        let json = #"{"wakeHour":7,"wakeMinute":30,"durationMinutes":30,"weekdays":[1,2],"isEnabled":true}"#
+        let json = #"{"wakeHour":7,"wakeMinute":30,"durationMinutes":45,"weekdays":[1,2],"isEnabled":true}"#
         let schedule = try JSONDecoder().decode(SunriseSchedule.self, from: Data(json.utf8))
-        #expect(schedule.endKelvin == SunriseSchedule.defaultEndKelvin)
-        #expect(schedule.wakeHour == 7)
+        #expect(schedule == SunriseSchedule(durationMinutes: 45))
+    }
+
+    @Test("Any colour temperature maps to the nearest end light", arguments: [(2700, 3000), (4400, 4000), (5600, 5000), (6500, 6500)])
+    func closestEndLight(_ kelvin: Int, _ expected: Int) {
+        #expect(EndLight.closest(to: kelvin).kelvin == expected)
     }
 }

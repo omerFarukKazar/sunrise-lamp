@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import SunriseCore
 
-@Suite("SchedulePlan")
-struct SchedulePlanTests {
-    private func plan(_ hour: Int, _ minute: Int, duration: Int = 30, days: Set<Weekday> = Set(Weekday.allCases)) -> SchedulePlan {
-        SchedulePlan(schedule: SunriseSchedule(wakeHour: hour, wakeMinute: minute, durationMinutes: duration, weekdays: days, isEnabled: true))
-    }
-
-    @Test("08:00 with 30 minutes starts at 07:30 every day")
-    func startsBeforeWake() {
-        let plan = plan(8, 0)
-        #expect(plan.start.timeText == "07:30")
-        #expect(plan.start.days == Set(Weekday.allCases))
-    }
-
-    @Test("A start before midnight moves to the previous day")
-    func crossesMidnight() {
-        let plan = plan(0, 15, days: [.monday])
-        #expect(plan.start.timeText == "23:45")
-        #expect(plan.start.days == [.sunday])
-    }
-
-    @Test("Calendar weekday maps Sunday = 1 to .sunday")
-    func calendarWeekday() {
-        #expect(Weekday(calendarWeekday: 1) == .sunday)
-        #expect(Weekday(calendarWeekday: 2) == .monday)
-        #expect(Weekday(calendarWeekday: 7) == .saturday)
-    }
-}
-
 @Suite("LampCommand")
 struct LampCommandTests {
     @Test("Sunset scene runs once and turns the light off at the end")
