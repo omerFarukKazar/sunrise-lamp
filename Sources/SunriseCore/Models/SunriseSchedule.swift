@@ -8,19 +8,6 @@ public enum Weekday: Int, CaseIterable, Codable, Comparable, Sendable {
         self.init(rawValue: calendarWeekday == 1 ? 7 : calendarWeekday - 1)
     }
 
-    /// `pmset repeat` day letters: M T W R F S U.
-    public var pmsetLetter: String {
-        switch self {
-        case .monday: "M"
-        case .tuesday: "T"
-        case .wednesday: "W"
-        case .thursday: "R"
-        case .friday: "F"
-        case .saturday: "S"
-        case .sunday: "U"
-        }
-    }
-
     public var shortName: String {
         switch self {
         case .monday: "Pt"
@@ -60,14 +47,35 @@ public struct SunriseSchedule: Codable, Equatable, Sendable {
     public var durationMinutes: Int
     public var weekdays: Set<Weekday>
     public var isEnabled: Bool
+    /// The colour temperature the sunrise ends on.
+    public var endKelvin: Int
 
-    public init(wakeHour: Int, wakeMinute: Int, durationMinutes: Int, weekdays: Set<Weekday>, isEnabled: Bool) {
+    public init(
+        wakeHour: Int, wakeMinute: Int, durationMinutes: Int, weekdays: Set<Weekday>, isEnabled: Bool,
+        endKelvin: Int = SunriseSchedule.defaultEndKelvin
+    ) {
         self.wakeHour = wakeHour
         self.wakeMinute = wakeMinute
         self.durationMinutes = durationMinutes
         self.weekdays = weekdays
         self.isEnabled = isEnabled
+        self.endKelvin = endKelvin
     }
+
+    /// Schedules saved before `endKelvin` existed decode with the default.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        wakeHour = try container.decode(Int.self, forKey: .wakeHour)
+        wakeMinute = try container.decode(Int.self, forKey: .wakeMinute)
+        durationMinutes = try container.decode(Int.self, forKey: .durationMinutes)
+        weekdays = try container.decode(Set<Weekday>.self, forKey: .weekdays)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        endKelvin = try container.decodeIfPresent(Int.self, forKey: .endKelvin) ?? Self.defaultEndKelvin
+    }
+
+    /// Morning sun is about 4000 to 5000 K; 6500 K reads as cold office light.
+    public static let defaultEndKelvin = 5000
+    public static let endKelvinRange = 2700...6500
 
     public static let `default` = SunriseSchedule(
         wakeHour: 8, wakeMinute: 0, durationMinutes: 30,

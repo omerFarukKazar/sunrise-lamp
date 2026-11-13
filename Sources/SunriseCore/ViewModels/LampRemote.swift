@@ -37,16 +37,30 @@ public final class LampRemote {
         didSet { store.schedule = schedule }
     }
 
+    /// The manual light controls. Every change reaches the lamp shortly after
+    /// the last edit, so dragging a slider does not flood the bulb.
+    public var light: LightSetting {
+        didSet {
+            guard light != oldValue else { return }
+            store.light = light
+            scheduleLightUpdate()
+        }
+    }
+
     public private(set) var status: Status = .idle
     public private(set) var lampState: LampState
 
     @ObservationIgnored private let client: LampClientProtocol
     @ObservationIgnored private let store: SettingsStoreProtocol
+    @ObservationIgnored private var lightUpdate: Task<Void, Never>?
+    @ObservationIgnored private let lightDelay: Duration
 
-    public init(client: LampClientProtocol, store: SettingsStoreProtocol) {
+    public init(client: LampClientProtocol, store: SettingsStoreProtocol, lightDelay: Duration = .milliseconds(250)) {
         self.client = client
         self.store = store
+        self.lightDelay = lightDelay
         schedule = store.schedule
+        light = store.light
         lampState = store.lamp.map(LampState.found) ?? .unknown
     }
 
@@ -77,8 +91,8 @@ public final class LampRemote {
 
     public func command(for action: Action) -> LampCommand {
         switch action {
-        case .sunrise: .sunrise(minutes: schedule.durationMinutes)
-        case .test: .sunrise(minutes: 1)
+        case .sunrise: .sunrise(minutes: schedule.durationMinutes, endKelvin: schedule.endKelvin)
+        case .test: .sunrise(minutes: 1, endKelvin: schedule.endKelvin)
         case .sunset: .sunset(minutes: LampRemote.sunsetMinutes)
         case .on: .powerOn
         case .off: .powerOff
@@ -109,23 +123,43 @@ public final class LampRemote {
     @discardableResult
     public func perform(_ action: Action) async -> Bool {
         status = .working("Lambaya gönderiliyor…")
-        let command = command(for: action)
-        if let lamp, (try? await client.send(command, to: lamp)) != nil {
-            status = .success(message(for: action))
-            return true
-        }
-        await findLamp()
-        guard let lamp else {
-            status = .failure("Lamba bulunamadı. Aynı Wi-Fi'da mısın, lamba açık mı?")
+        if let failure = await deliver(command(for: action)) {
+            status = .failure(failure)
             return false
         }
+        status = .success(message(for: action))
+        return true
+    }
+
+    /// Sends the current manual light setting. Success stays quiet; only a
+    /// failure shows up in the status.
+    public func applyLight() async {
+        if let failure = await deliver(light.command) {
+            status = .failure(failure)
+        } else if case .failure = status {
+            status = .idle
+        }
+    }
+
+    private func scheduleLightUpdate() {
+        lightUpdate?.cancel()
+        lightUpdate = Task { [lightDelay] in
+            try? await Task.sleep(for: lightDelay)
+            guard !Task.isCancelled else { return }
+            await applyLight()
+        }
+    }
+
+    /// Returns nil on success, otherwise the message to show.
+    private func deliver(_ command: LampCommand) async -> String? {
+        if let lamp, (try? await client.send(command, to: lamp)) != nil { return nil }
+        await findLamp()
+        guard let lamp else { return "Lamba bulunamadı. Aynı Wi-Fi'da mısın, lamba açık mı?" }
         do {
             try await client.send(command, to: lamp)
-            status = .success(message(for: action))
-            return true
+            return nil
         } catch {
-            status = .failure(error.localizedDescription)
-            return false
+            return error.localizedDescription
         }
     }
 }

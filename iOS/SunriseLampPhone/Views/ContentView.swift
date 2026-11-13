@@ -10,6 +10,7 @@ struct ContentView: View {
                 VStack(spacing: Spacing.lg) {
                     AlarmCard(remote: remote)
                     LampCard(remote: remote)
+                    LightCard(remote: remote)
                     StatusBanner(status: remote.status)
                     AutomationCard(remote: remote)
                 }
@@ -58,7 +59,7 @@ private struct AlarmCard: View {
             }
 
             Capsule()
-                .fill(Palette.sunrise)
+                .fill(Palette.sunrise(endKelvin: remote.schedule.endKelvin))
                 .frame(height: Layout.timelineHeight)
                 .accessibilityHidden(true)
 
@@ -75,12 +76,45 @@ private struct AlarmCard: View {
                 .labelsHidden()
             }
 
-            Text("\(remote.automationTime)'da kızıl ışıkla başlar, \(remote.schedule.wakeTimeText)'da gün ışığına ulaşır.")
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack {
+                    Text("Bitiş ışığı")
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textPrimary)
+                    Spacer()
+                    Text("\(String(remote.schedule.endKelvin)) K · \(endLightName)")
+                        .font(Typography.label.monospacedDigit())
+                        .foregroundStyle(Palette.textSecondary)
+                        .contentTransition(.numericText())
+                }
+                Slider(value: endKelvin, in: Double(SunriseSchedule.endKelvinRange.lowerBound)...Double(SunriseSchedule.endKelvinRange.upperBound), step: 100) {
+                    Text("Bitiş ışığı")
+                }
+                .accessibilityValue("\(String(remote.schedule.endKelvin)) Kelvin, \(endLightName)")
+            }
+
+            Text("\(remote.automationTime)'da kızıl ışıkla başlar, \(remote.schedule.wakeTimeText)'da \(String(remote.schedule.endKelvin)) K beyaza ulaşır.")
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .card()
+    }
+
+    private var endKelvin: Binding<Double> {
+        Binding(
+            get: { Double(remote.schedule.endKelvin) },
+            set: { remote.schedule.endKelvin = Int($0.rounded()) }
+        )
+    }
+
+    private var endLightName: String {
+        switch remote.schedule.endKelvin {
+        case ..<3500: "sıcak beyaz"
+        case ..<4600: "sabah güneşi"
+        case ..<5600: "gün ışığı"
+        default: "soğuk beyaz"
+        }
     }
 }
 

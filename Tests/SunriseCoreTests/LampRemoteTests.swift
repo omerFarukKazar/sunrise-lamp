@@ -18,7 +18,7 @@ struct LampRemoteTests {
         store.schedule.durationMinutes = 45
         let remote = makeRemote()
         #expect(await remote.perform(.sunrise))
-        #expect(client.sent == [.sunrise(minutes: 45)])
+        #expect(client.sent == [.sunrise(minutes: 45, endKelvin: SunriseSchedule.defaultEndKelvin)])
         guard case .success = remote.status else {
             Issue.record("expected .success, got \(remote.status)")
             return
@@ -26,7 +26,7 @@ struct LampRemoteTests {
     }
 
     @Test("Each action maps to its lamp command", arguments: [
-        (LampRemote.Action.test, LampCommand.sunrise(minutes: 1)),
+        (LampRemote.Action.test, LampCommand.sunrise(minutes: 1, endKelvin: SunriseSchedule.defaultEndKelvin)),
         (.sunset, .sunset(minutes: LampRemote.sunsetMinutes)),
         (.on, .powerOn),
         (.off, .powerOff),
@@ -66,6 +66,35 @@ struct LampRemoteTests {
         let remote = makeRemote()
         #expect(await remote.perform(.on) == false)
         #expect(remote.lampState == .notFound)
+        guard case .failure = remote.status else {
+            Issue.record("expected .failure, got \(remote.status)")
+            return
+        }
+    }
+
+    @Test("Sunrise ends on the chosen colour temperature")
+    func sunriseEndKelvin() {
+        store.schedule.endKelvin = 4000
+        #expect(makeRemote().command(for: .sunrise) == .sunrise(minutes: 30, endKelvin: 4000))
+    }
+
+    @Test("Quick light edits reach the lamp once, with the last value")
+    func lightIsDebounced() async throws {
+        store.lamp = bulb
+        let remote = LampRemote(client: client, store: store, lightDelay: .milliseconds(20))
+        remote.light.brightness = 30
+        remote.light.brightness = 60
+        remote.light.kelvin = 2700
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(client.sent == [.temperature(kelvin: 2700, brightness: 60)])
+        #expect(store.light.kelvin == 2700)
+    }
+
+    @Test("A light change that cannot reach the lamp is reported")
+    func lightFailure() async {
+        client.discovered = nil
+        let remote = makeRemote()
+        await remote.applyLight()
         guard case .failure = remote.status else {
             Issue.record("expected .failure, got \(remote.status)")
             return

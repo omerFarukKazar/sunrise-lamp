@@ -1,3 +1,4 @@
+import SunriseCore
 import SwiftUI
 import UIKit
 
@@ -15,11 +16,22 @@ enum Palette {
     static let success = Color(light: 0x15803D, dark: 0x22C55E)
     static let danger = Color(light: 0xB91C1C, dark: 0xF87171)
 
-    /// The same colours the lamp goes through, red dawn to daylight.
-    static let sunrise = LinearGradient(
-        colors: [Color(hex: 0xFF1E00), Color(hex: 0xFF4500), Color(hex: 0xFF8C00), Color(hex: 0xFFD8A0), Color(hex: 0xFFF6E5)],
-        startPoint: .leading, endPoint: .trailing
-    )
+    /// The same colours the lamp goes through, red dawn to the chosen white.
+    static func sunrise(endKelvin: Int) -> LinearGradient {
+        LinearGradient(
+            colors: [0xFF1E00, 0xFF4500, 0xFF8C00, LightSetting.rgb(forKelvin: 2200), LightSetting.rgb(forKelvin: endKelvin)].map(Color.init(rgb:)),
+            startPoint: .leading, endPoint: .trailing
+        )
+    }
+
+    /// Warm to cool white across a temperature range.
+    static func kelvinScale(_ range: ClosedRange<Int>) -> LinearGradient {
+        let steps = 6
+        let colors = (0...steps).map { index in
+            Color(rgb: LightSetting.rgb(forKelvin: range.lowerBound + (range.upperBound - range.lowerBound) * index / steps))
+        }
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
 }
 
 enum Spacing {
@@ -54,6 +66,7 @@ enum Layout {
     static let statusDot: CGFloat = 8
     static let stepBadge: CGFloat = 24
     static let maxContentWidth: CGFloat = 560
+    static let lightPreview: CGFloat = 40
 }
 
 extension Color {
@@ -63,6 +76,18 @@ extension Color {
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255
         )
+    }
+
+    init(rgb: Int) {
+        self.init(hex: UInt32(truncatingIfNeeded: rgb))
+    }
+
+    /// 0xRRGGBB in sRGB, or nil if the colour cannot be read.
+    var rgbValue: Int? {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(self).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        func byte(_ value: CGFloat) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+        return byte(red) << 16 | byte(green) << 8 | byte(blue)
     }
 
     init(light: UInt32, dark: UInt32) {

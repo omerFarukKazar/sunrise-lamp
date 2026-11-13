@@ -4,6 +4,7 @@ import Foundation
 public protocol SettingsStoreProtocol: AnyObject {
     var schedule: SunriseSchedule { get set }
     var lamp: Lamp? { get set }
+    var light: LightSetting { get set }
 }
 
 /// Keeps everything in the app's own preferences, no separate files.
@@ -23,6 +24,11 @@ public final class SettingsStore: SettingsStoreProtocol {
     public var lamp: Lamp? {
         get { read("lamp") }
         set { write(newValue, "lamp") }
+    }
+
+    public var light: LightSetting {
+        get { read("light") ?? .default }
+        set { write(newValue, "light") }
     }
 
     private func read<T: Decodable>(_ key: String) -> T? {

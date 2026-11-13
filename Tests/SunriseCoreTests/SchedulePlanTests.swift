@@ -43,15 +43,15 @@ struct LampCommandTests {
 
     @Test("Sunrise scene count matches the number of steps")
     func sunriseCount() {
-        let json = LampCommand.sunrise(minutes: 30).json
-        let steps = LampCommand.sunriseFlow(minutes: 30)
+        let json = LampCommand.sunrise(minutes: 30, endKelvin: 5000).json
+        let steps = LampCommand.sunriseFlow(minutes: 30, endKelvin: 5000)
         #expect(json.contains(#""cf",\#(steps.count),1,"#))
         #expect(json.hasPrefix(#"{"id":1,"method":"set_scene""#))
     }
 
-    @Test("Sunrise starts deep red and ends at daylight, phases fill the duration")
+    @Test("Sunrise starts deep red and ends at the chosen white, phases fill the duration")
     func sunriseFlow() {
-        let steps = LampCommand.sunriseFlow(minutes: 30)
+        let steps = LampCommand.sunriseFlow(minutes: 30, endKelvin: 6500)
         #expect(steps.first == .init(duration: 50, mode: 1, value: 0xFF1E00, brightness: 1))
         #expect(steps.last?.brightness == 100)
         #expect(steps.last?.mode == 2 && steps.last?.value == 6500)
