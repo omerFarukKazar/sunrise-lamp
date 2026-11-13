@@ -1,49 +1,54 @@
 # Sunrise Lamp
 
-An iPhone app that turns a smart bulb into a sunrise alarm. Before your wake-up time the lamp starts at a deep red glow and slowly moves through orange to the white you chose (3000 to 6500 K). A sunset action does the reverse before sleep and turns the light off.
+Odadaki akıllı ampulü gündoğumu alarmına çeviren bir iPhone uygulaması. Lamba uyanmadan önce kırmızıdan beyaza yavaşça aydınlanır, seni ışık uyandırır.
 
-## How it works
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/screenshots/light.jpg" alt="Işık ekranı: parlaklık, ton ve sahneler" width="240"><br><b>Işık</b><br>günlük lamba kumandası</td>
+    <td align="center" width="33%"><img src="docs/screenshots/sunrise.jpg" alt="Gündoğumu ekranı: süre ve bitiş ışığı" width="240"><br><b>Gündoğumu</b><br>sabahki ışık</td>
+    <td align="center" width="33%"><img src="docs/screenshots/edit.jpg" alt="Düzenleme: bitiş ışığı ve süre seçimi" width="240"><br><b>Düzenle</b><br>seçtiğin renk lambada önizlenir</td>
+  </tr>
+</table>
 
-- In the app you pick the sunrise length (15 to 60 minutes) and the light it ends on. While you edit, the bulb previews the end light.
-- The wake time and days live in a Shortcuts automation, set to start that many minutes before you want to be up. It calls the app's **Gün doğumunu başlat** action.
-- The app sends the whole sunrise to the bulb in one command. The bulb plays it on its own, so the phone does not need to stay awake.
-- If you change the length later, the app reminds you to move the automation so your wake time stays the same.
-- A Light tab works the bulb as a plain smart light: brightness, tone, colour, scenes.
-- Shortcuts and Siri actions: **Gün doğumunu başlat**, **Gün batımını başlat**, **Işığı aç**, **Işığı kapat**.
+## Nasıl yaptık
 
-## Set up the morning alarm
+1. **Lambayı ağda aradık.** Ev ağındaki cihazları taradık, lamba yoktu. Resetlenmiş, kendi kurulum Wi-Fi'ını açmıştı. Ağ adından modeli öğrendik: Yeelight 1S Color.
+2. **Ev ağına aldık, LAN Control'ü açtık.** Wi-Fi bilgisini bir script ile lambaya gönderdik. Yeelight uygulamasından LAN Control'ü açtık; bu ayar kapalıyken lamba yerel ağdan komut kabul etmiyor.
+3. **Dokümantasyona baktık.** Yeelight yerel kontrol protokolünü açıkça yayımlıyor, tersine mühendislik gerekmedi. Lamba bir keşif isteğine IP'siyle ve bildiği komutlarla cevap veriyor.
+4. **Terminalden ilk komutu attık.** Aynı ağda olduğumuz için lambanın IP'sine TCP ile tek satır JSON gönderdik. Protokolde "color flow" diye bir komut var: renk ve parlaklık adımlarını süreleriyle verirsin, lamba geçişi kendisi yapar.
+5. **Lamba kırmızıda takıldı.** Komutta adım sayısını yanlış vermiştik, lamba ilk adımda durdu. Düzeltince kırmızıdan beyaza akış çalıştı.
+6. **Zamanlamayı iPhone'a verdik.** İlk sürüm Mac'te zamanlanmış bir görevdi, ama kapak kapanınca Mac uyuyordu. Şimdi iPhone'daki Apple Kısayollar otomasyonu her sabah uygulamanın eylemini çalıştırıyor, uygulama da aynı komutu yolluyor.
 
-1. Open the app once on the same Wi-Fi as the bulb and allow Local Network access.
-2. Pick the sunrise length and end light.
-3. In Shortcuts: Automation › New Automation › Time of Day, set your wake time minus the sunrise length and the days, choose **Run Immediately**.
-4. Add the **Gün doğumunu başlat** action. Optionally add **Play Music** after it. Back in the app, tap **Kurdum**.
+## Her sabah ne oluyor
 
-## Supported lamp
+Telefon tek mesaj atar, gerisini lamba yapar.
 
-The app is built for one lamp: a **Yeelight** Wi-Fi colour bulb with **LAN Control** turned on in the Yeelight app. Other brands are not supported, and there are no plans to add them. If you have a different lamp, see [Using a different lamp](#using-a-different-lamp).
+```mermaid
+flowchart LR
+    A["Apple otomasyonu<br>Günün Saati 06:00"] --> B["Uygulama<br>App Intent"]
+    B -- "yerel ağ" --> C["Lamba"]
+    C --> D["30 dk kırmızıdan<br>beyaza kendi oynatır"]
+```
 
-## How it is built
+İnternet yok, hesap yok. Telefon kilitli kalabilir.
 
-- **SwiftUI app, no dependencies.** Only Apple frameworks: SwiftUI, Observation, App Intents and Network.
-- **Local network only.** The phone finds the bulb with Yeelight's discovery search (UDP multicast on port 1982), then sends JSON commands over TCP port 55443. No cloud, no account, no server.
-- **The bulb plays the sunrise itself.** Yeelight bulbs accept a *colour flow*: a list of steps (colour or colour temperature, brightness, duration) that the bulb runs on its own. The app sends the whole sunrise as one `set_scene` `cf` command:
-  1. Deep red at 1 %
-  2. Orange, then amber
-  3. 2200 K, then up to 3200 K
-  4. The chosen white (3000 to 6500 K) at 100 %
+> **Tek cümleyle:** Apple Kısayollar otomasyonu sabah uygulamayı çalıştırır, uygulama yerel ağdan lambaya tek bir komut yollar, lamba 30 dakikalık gündoğumunu kendisi oynatır.
 
-  Each phase takes a fifth of the sunrise length. After the last step the bulb stays on. The sunset is the same idea in reverse, and the bulb turns off at the end.
-- **Shortcuts is the alarm clock.** iOS does not let an app run code at a set time in the background. A Shortcuts *Time of Day* automation does, and it calls the app's App Intent. The intent only has to send one command, so it finishes in a second. The phone can stay locked and asleep for the rest.
-- **The app does not read the bulb.** It only sends commands, so it does not see changes made from the Yeelight app or a wall switch.
-- **Code layout**
-  - `Sources/SunriseCore`: a Swift package with the lamp protocol, the flows and the view model. It has tests and runs `swift test` on the Mac.
-  - `iOS/SunriseLampPhone`: the SwiftUI screens and the App Intents.
+## Sabah alarmını kur
 
-## Using a different lamp
+1. Uygulamayı lambayla aynı Wi-Fi'da bir kez aç ve Yerel Ağ iznini ver.
+2. Gündoğumu süresini (15 ile 60 dk) ve bitiş ışığını seç.
+3. Kısayollar'da **Otomasyon › Yeni Otomasyon › Günün Saati**: uyanma saatinden gündoğumu süresi kadar önceyi ve günleri seç, **Hemen Çalıştır**'ı işaretle.
+4. **Gün doğumunu başlat** eylemini ekle. İstersen arkasına **Müzik Çal** ekle. Uygulamaya dönüp **Kurdum**'a dokun.
 
-This repository will stay Yeelight only, but the idea carries over to any lamp that can **run a timed colour transition by itself**. This matters: Shortcuts gives the app only a few seconds, so the phone cannot step the colours for 30 minutes. Before you start, check that your lamp (or its hub) can play a scene or transition with a duration, locally or through its API. Philips Hue, for example, supports transition times on its bridge.
+Süreyi sonradan değiştirirsen uygulama, uyanma saatin aynı kalsın diye otomasyonu kaydırmanı hatırlatır.
 
-To adapt it, open the repository in an AI coding assistant (Claude Code, Cursor, or similar) and give it this prompt, with your lamp's details filled in:
+## Kendin de yapmak ister misin?
+
+Bu repo sadece Yeelight için. Tek şart: lamban dakikalar süren renk geçişini kendisi oynatabilmeli (örneğin Hue köprüsü yapabiliyor), çünkü Kısayollar uygulamaya sadece birkaç saniye verir. Aşağıdaki prompt'u Claude Code veya Cursor gibi bir araca repo ile birlikte ver.
+
+<details>
+<summary><b>Prompt'u göster</b></summary>
 
 ```text
 This repository is an iOS sunrise alarm app for Yeelight bulbs. Read README.md
@@ -69,24 +74,26 @@ It is controlled through: <local API / hub / cloud API, with a link to its docs>
    sure swift test passes.
 ```
 
-## Requirements
+</details>
 
-- iOS 17 or later
-- Xcode 16 or later (Swift 6)
-- A Yeelight colour bulb on the same Wi-Fi, with **LAN Control** enabled in the Yeelight app
+## Gereksinimler
 
-## Build
+- iOS 17 veya üstü
+- Xcode 16 veya üstü (Swift 6)
+- Aynı Wi-Fi'da, Yeelight uygulamasında **LAN Control** açık bir Yeelight renkli ampul
 
-1. Open `iOS/SunriseLampPhone.xcodeproj` in Xcode.
-2. Under Signing & Capabilities, choose your own team (and change the bundle identifier if Xcode asks).
-3. Run it on your iPhone.
+## Derleme
 
-The shared logic lives in the `SunriseCore` Swift package at the repository root. Its tests run on the Mac:
+1. `iOS/SunriseLampPhone.xcodeproj` dosyasını Xcode'da aç.
+2. Signing & Capabilities altında kendi takımını seç (Xcode isterse bundle identifier'ı değiştir).
+3. iPhone'unda çalıştır.
+
+Ortak mantık repo kökündeki `SunriseCore` Swift paketinde. Testleri Mac'te çalışır:
 
 ```bash
 swift test
 ```
 
-## License
+## Lisans
 
 MIT
