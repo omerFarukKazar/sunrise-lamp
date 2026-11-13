@@ -85,7 +85,7 @@ It is controlled through: <local API / hub / cloud API, with a link to its docs>
 ## Derleme
 
 1. `iOS/SunriseLampPhone.xcodeproj` dosyasını Xcode'da aç.
-2. Signing & Capabilities altında kendi takımını seç (Xcode isterse bundle identifier'ı değiştir).
+2. Kendi takımını ver: `iOS/Signing.local.xcconfig` dosyası oluştur ve içine `DEVELOPMENT_TEAM = <Team ID'n>` yaz (bu dosya commit'lenmez). Ya da Xcode'da Signing & Capabilities altından seç. Xcode isterse bundle identifier'ı da değiştir.
 3. iPhone'unda çalıştır.
 
 Ortak mantık repo kökündeki `SunriseCore` Swift paketinde. Testleri Mac'te çalışır:

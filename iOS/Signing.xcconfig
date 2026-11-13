@@ -1,0 +1,8 @@
+// Signing settings for the app target.
+// Put your own team in Signing.local.xcconfig next to this file (it is not
+// committed), for example:
+//
+//     DEVELOPMENT_TEAM = ABCDE12345
+//
+// Without it, pick your team in Xcode under Signing & Capabilities.
+#include? "Signing.local.xcconfig"

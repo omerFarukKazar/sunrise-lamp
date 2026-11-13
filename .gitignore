@@ -6,3 +6,4 @@ xcuserdata/
 DerivedData/
 iOS/build.log
 .DS_Store
+iOS/Signing.local.xcconfig
