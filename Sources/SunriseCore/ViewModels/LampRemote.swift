@@ -29,6 +29,9 @@ public final class LampRemote {
         case off
     }
 
+    /// How long the sunset fades the light out.
+    public nonisolated static let sunsetMinutes = 30
+
     /// Wake time and sunrise length; the automation time follows from them.
     public var schedule: SunriseSchedule {
         didSet { store.schedule = schedule }
@@ -76,7 +79,7 @@ public final class LampRemote {
         switch action {
         case .sunrise: .sunrise(minutes: schedule.durationMinutes)
         case .test: .sunrise(minutes: 1)
-        case .sunset: .sunset(minutes: SunriseModel.sunsetMinutes)
+        case .sunset: .sunset(minutes: LampRemote.sunsetMinutes)
         case .on: .powerOn
         case .off: .powerOff
         }
@@ -86,7 +89,7 @@ public final class LampRemote {
         switch action {
         case .sunrise: "Güneş doğuyor, \(schedule.durationMinutes) dakikada gün ışığına ulaşacak."
         case .test: "1 dakikalık test gönderildi, lambaya bak."
-        case .sunset: "Işık \(SunriseModel.sunsetMinutes) dakikada kızıla dönüp sönecek."
+        case .sunset: "Işık \(LampRemote.sunsetMinutes) dakikada kızıla dönüp sönecek."
         case .on: "Işık açıldı."
         case .off: "Işık kapatıldı."
         }

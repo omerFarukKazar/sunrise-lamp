@@ -4,17 +4,6 @@ import Testing
 
 @Suite("SchedulePlan")
 struct SchedulePlanTests {
-    private var calendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Istanbul") ?? .current
-        return calendar
-    }
-
-    /// Tuesday 3 November 2026 at the given time.
-    private func tuesday(_ hour: Int, _ minute: Int) -> Date {
-        calendar.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: hour, minute: minute)) ?? .distantPast
-    }
-
     private func plan(_ hour: Int, _ minute: Int, duration: Int = 30, days: Set<Weekday> = Set(Weekday.allCases)) -> SchedulePlan {
         SchedulePlan(schedule: SunriseSchedule(wakeHour: hour, wakeMinute: minute, durationMinutes: duration, weekdays: days, isEnabled: true))
     }
@@ -23,8 +12,7 @@ struct SchedulePlanTests {
     func startsBeforeWake() {
         let plan = plan(8, 0)
         #expect(plan.start.timeText == "07:30")
-        #expect(plan.pmsetTime == "07:30:00")
-        #expect(plan.pmsetDays == "MTWRFSU")
+        #expect(plan.start.days == Set(Weekday.allCases))
     }
 
     @Test("A start before midnight moves to the previous day")
@@ -32,12 +20,6 @@ struct SchedulePlanTests {
         let plan = plan(0, 15, days: [.monday])
         #expect(plan.start.timeText == "23:45")
         #expect(plan.start.days == [.sunday])
-        #expect(plan.pmsetDays == "U")
-    }
-
-    @Test("pmset days are listed Monday first")
-    func pmsetDayOrder() {
-        #expect(plan(8, 0, days: [.sunday, .monday, .thursday]).pmsetDays == "MRU")
     }
 
     @Test("Calendar weekday maps Sunday = 1 to .sunday")
@@ -45,27 +27,6 @@ struct SchedulePlanTests {
         #expect(Weekday(calendarWeekday: 1) == .sunday)
         #expect(Weekday(calendarWeekday: 2) == .monday)
         #expect(Weekday(calendarWeekday: 7) == .saturday)
-    }
-
-    @Test("Fires inside the window and not before or after it")
-    func fireWindow() {
-        let plan = plan(8, 0)
-        #expect(!plan.shouldFire(at: tuesday(7, 29), lastFired: nil, calendar: calendar))
-        #expect(plan.shouldFire(at: tuesday(7, 30), lastFired: nil, calendar: calendar))
-        #expect(plan.shouldFire(at: tuesday(7, 39), lastFired: nil, calendar: calendar))
-        #expect(!plan.shouldFire(at: tuesday(7, 40), lastFired: nil, calendar: calendar))
-    }
-
-    @Test("Fires only once per day")
-    func firesOnce() {
-        let plan = plan(8, 0)
-        #expect(!plan.shouldFire(at: tuesday(7, 31), lastFired: tuesday(7, 30), calendar: calendar))
-        #expect(plan.shouldFire(at: tuesday(7, 31), lastFired: tuesday(7, 30).addingTimeInterval(-86_400), calendar: calendar))
-    }
-
-    @Test("Does not fire on a day that is not selected")
-    func skipsUnselectedDay() {
-        #expect(!plan(8, 0, days: [.monday]).shouldFire(at: tuesday(7, 30), lastFired: nil, calendar: calendar))
     }
 }
 

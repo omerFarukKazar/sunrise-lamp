@@ -27,7 +27,7 @@ struct LampRemoteTests {
 
     @Test("Each action maps to its lamp command", arguments: [
         (LampRemote.Action.test, LampCommand.sunrise(minutes: 1)),
-        (.sunset, .sunset(minutes: SunriseModel.sunsetMinutes)),
+        (.sunset, .sunset(minutes: LampRemote.sunsetMinutes)),
         (.on, .powerOn),
         (.off, .powerOff),
     ])

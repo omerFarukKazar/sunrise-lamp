@@ -9,7 +9,6 @@ let package = Package(
     ],
     targets: [
         .target(name: "SunriseCore"),
-        .executableTarget(name: "SunriseLamp", dependencies: ["SunriseCore"]),
         .testTarget(name: "SunriseCoreTests", dependencies: ["SunriseCore"]),
     ]
 )
