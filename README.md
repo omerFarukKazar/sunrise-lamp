@@ -18,19 +18,62 @@ An iPhone app that turns a smart bulb into a sunrise alarm. Before your wake-up 
 3. In Shortcuts: Automation › New Automation › Time of Day, set your wake time minus the sunrise length and the days, choose **Run Immediately**.
 4. Add the **Gün doğumunu başlat** action. Optionally add **Play Music** after it. Back in the app, tap **Kurdum**.
 
-## Supported lamps
+## Supported lamp
 
-| Brand | Status |
-|-------|--------|
-| Yeelight (Wi-Fi colour bulbs, LAN Control on) | Supported |
+The app is built for one lamp: a **Yeelight** Wi-Fi colour bulb with **LAN Control** turned on in the Yeelight app. Other brands are not supported, and there are no plans to add them. If you have a different lamp, see [Using a different lamp](#using-a-different-lamp).
 
-Other brands can be added by implementing `LampClientProtocol` in `Sources/SunriseCore/Lamp`.
+## How it is built
+
+- **SwiftUI app, no dependencies.** Only Apple frameworks: SwiftUI, Observation, App Intents and Network.
+- **Local network only.** The phone finds the bulb with Yeelight's discovery search (UDP multicast on port 1982), then sends JSON commands over TCP port 55443. No cloud, no account, no server.
+- **The bulb plays the sunrise itself.** Yeelight bulbs accept a *colour flow*: a list of steps (colour or colour temperature, brightness, duration) that the bulb runs on its own. The app sends the whole sunrise as one `set_scene` `cf` command:
+  1. Deep red at 1 %
+  2. Orange, then amber
+  3. 2200 K, then up to 3200 K
+  4. The chosen white (3000 to 6500 K) at 100 %
+
+  Each phase takes a fifth of the sunrise length. After the last step the bulb stays on. The sunset is the same idea in reverse, and the bulb turns off at the end.
+- **Shortcuts is the alarm clock.** iOS does not let an app run code at a set time in the background. A Shortcuts *Time of Day* automation does, and it calls the app's App Intent. The intent only has to send one command, so it finishes in a second. The phone can stay locked and asleep for the rest.
+- **The app does not read the bulb.** It only sends commands, so it does not see changes made from the Yeelight app or a wall switch.
+- **Code layout**
+  - `Sources/SunriseCore`: a Swift package with the lamp protocol, the flows and the view model. It has tests and runs `swift test` on the Mac.
+  - `iOS/SunriseLampPhone`: the SwiftUI screens and the App Intents.
+
+## Using a different lamp
+
+This repository will stay Yeelight only, but the idea carries over to any lamp that can **run a timed colour transition by itself**. This matters: Shortcuts gives the app only a few seconds, so the phone cannot step the colours for 30 minutes. Before you start, check that your lamp (or its hub) can play a scene or transition with a duration, locally or through its API. Philips Hue, for example, supports transition times on its bridge.
+
+To adapt it, open the repository in an AI coding assistant (Claude Code, Cursor, or similar) and give it this prompt, with your lamp's details filled in:
+
+```text
+This repository is an iOS sunrise alarm app for Yeelight bulbs. Read README.md
+and the code under Sources/SunriseCore and iOS/SunriseLampPhone first.
+
+I want the same app for my lamp instead: <brand and model>.
+It is controlled through: <local API / hub / cloud API, with a link to its docs>.
+
+1. Before changing anything, tell me whether my lamp can play a timed
+   transition (colour or colour temperature and brightness over minutes) on its
+   own, without the phone sending steps. If it cannot, stop and explain the
+   options.
+2. Write a new client that conforms to LampClientProtocol in
+   Sources/SunriseCore/Lamp. Map each LampCommand case to my lamp's API:
+   sunrise and sunset as the lamp's own timed transition, plus temperature,
+   colour, power on and power off. Keep the sunrise colours and timings from
+   LampCommand.sunriseFlow.
+3. Add whatever my lamp needs to connect (hub pairing, an API key, a bridge IP)
+   and store it with SettingsStore. Never commit keys.
+4. Replace YeelightClient() in SunriseLampPhoneApp.swift and LampIntents.swift
+   with the new client, and update the "Yeelight" text in the UI.
+5. Add tests for the new command mapping next to the existing ones, and make
+   sure swift test passes.
+```
 
 ## Requirements
 
 - iOS 17 or later
 - Xcode 16 or later (Swift 6)
-- A Yeelight bulb on the same Wi-Fi with **LAN Control** enabled in the Yeelight app
+- A Yeelight colour bulb on the same Wi-Fi, with **LAN Control** enabled in the Yeelight app
 
 ## Build
 
